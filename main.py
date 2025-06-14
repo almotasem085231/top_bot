@@ -180,15 +180,13 @@ async def calculate_and_announce_top_engaged():
         'top_1_username': None, 'top_2_username': None, 'top_3_username': None,
     }
 
-     announcement_text_template = (
-
+    announcement_text_template = (
         "التوب الأسبوعي 🔝 \n\n"
         "🥇المركز الاول  {top1_mention}\n\n"
         "🥈المركز الثاني  {top2_mention}\n\n"
         "🥉المركز الثالث  {top3_mention}\n\n"
         "مبروك لكم لقب 🏅top engaged \n\n"
         "وشكرا لتفاعل الجميع وحظ موفق للأسبوع القادم 🤍"
-
     )
 
 
