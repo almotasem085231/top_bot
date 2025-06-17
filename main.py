@@ -169,6 +169,55 @@ async def calculate_and_announce_top_engaged():
         logging.warning("Database cursor is not initialized. Cannot calculate top engaged users.")
         return
 
+
+async def demote_old_top_engaged(chat_id: int):
+    """
+    Demotes users who were previously set as 'TOP ENGAGED' admins,
+    removing their custom titles and administrative privileges.
+    """
+    logging.info(f"Demoting old TOP ENGAGED users in chat {chat_id}")
+    try:
+        # Get current chat administrators
+        admins = await bot.get_chat_administrators(chat_id)
+        
+        for admin in admins:
+            user_id = admin.user.id
+            custom_title = admin.custom_title
+            
+            # Check if the custom title indicates a 'TOP ENGAGED' winner
+            if custom_title and ("TOP ENGAGED" in custom_title.upper()):
+                logging.info(f"Found old TOP ENGAGED admin: {admin.user.full_name} (ID: {user_id}) with title: {custom_title}")
+                try:
+                    # Remove all administrative privileges, effectively demoting them to a regular member
+                    # This also removes the custom title.
+                    await bot.promote_chat_member(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        can_manage_chat=False,
+                        can_delete_messages=False,
+                        can_manage_video_chats=False,
+                        can_restrict_members=False,
+                        can_promote_members=False,
+                        can_change_info=False,
+                        can_invite_users=False,
+                        can_pin_messages=False,
+                        can_post_messages=False # Ensure all are False
+                    )
+                    logging.info(f"Successfully demoted {admin.user.full_name} (ID: {user_id}) and removed custom title.")
+                    await asyncio.sleep(0.1) # Small delay to avoid hitting API limits
+                except TelegramForbiddenError:
+                    logging.warning(f"Bot lacks permission to demote user {user_id} in chat {chat_id}")
+                except TelegramBadRequest as e:
+                    logging.warning(f"Failed to demote user {user_id}: {e}")
+                except Exception as e:
+                    logging.error(f"Error demoting user {user_id}: {e}")
+            
+    except TelegramForbiddenError:
+        logging.error(f"Bot lacks 'can_promote_members' permission in chat {chat_id}. Cannot demote old TOP ENGAGED users.")
+    except Exception as e:
+        logging.error(f"Error getting chat administrators or demoting users in chat {chat_id}: {e}")
+
+    
     # Get top 3 users by message count
     await db_cursor.execute("SELECT user_id, username, full_name, message_count FROM message_counts ORDER BY message_count DESC LIMIT 3")
     top_users_data = await db_cursor.fetchall()
