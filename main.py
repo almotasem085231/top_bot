@@ -383,15 +383,15 @@ async def schedule_top_engaged_task():
     while True:
         now = datetime.now(SAUDI_ARABIA_TIMEZONE)
 
-        # Calculate next Saturday 00:00:00
-        # Saturday is weekday 5 (Monday is 0, Sunday is 6)
-        days_until_saturday = (5 - now.weekday() + 7) % 7 
+        # Calculate next Tuesday 00:00:00
+        # Tuesday is weekday 1 (Monday is 0, Sunday is 6)
+        days_until_tuesday = (1 - now.weekday() + 7) % 7 
 
-        next_run_time = now + timedelta(days=days_until_saturday)
+        next_run_time = now + timedelta(days=days_until_tuesday)
         next_run_time = next_run_time.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # If today is Saturday and the time is already past 00:00, schedule for next Saturday
-        if now.weekday() == 5 and now.hour >= 0 and now.minute >= 0 and now.second >= 0:
+        # If today is Tuesday and the time is already past 00:00, schedule for next Tuesday
+        if now.weekday() == 1 and now.hour >= 0 and now.minute >= 0 and now.second >= 0:
             next_run_time += timedelta(days=7)
 
         time_to_wait = (next_run_time - now).total_seconds()
@@ -401,7 +401,7 @@ async def schedule_top_engaged_task():
 
         # Ensure it runs exactly at the scheduled time, even if sleep was slightly off
         current_time_before_run = datetime.now(SAUDI_ARABIA_TIMEZONE)
-        if current_time_before_run.weekday() == 5 and \
+        if current_time_before_run.weekday() == 1 and \
            current_time_before_run.hour == 0 and \
            current_time_before_run.minute == 0:
             await calculate_and_announce_top_engaged()
