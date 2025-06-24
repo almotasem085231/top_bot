@@ -569,17 +569,19 @@ async def top_this_week_handler(message: types.Message):
     try:
         await db_cursor.execute("SELECT user_id, username, full_name, message_count FROM message_counts ORDER BY message_count DESC LIMIT 3")
         top_users = await db_cursor.fetchall()
+        actual_top_users = [user for user in top_users if user[3] > 0] # user[3] هو message_count
+
     except Exception as e:
         logging.error(f"Error getting top users: {e}")
         await message.reply("حدث خطأ أثناء جلب البيانات.")
         return
 
-    if not top_users:
+    if not actual_top_users:
         await message.reply("لم يتم تسجيل أي تفاعل لهذا الأسبوع بعد، أو لم يتم الإعلان عن الفائزين بعد.")
         return
 
     response = "أعلى 3 مستخدمين تفاعلاً هذا الأسبوع حتى الآن:\n"
-    for i, (user_id, username, full_name, count) in enumerate(top_users):
+    for i, (user_id, username, full_name, count) in enumerate(actual_top_users):
         display_name = f"@{username}" if username else full_name if full_name else f"ID: {user_id}"
         response += f"{i+1}. {display_name} ({count} رسالة)\n"
     await message.reply(response)
