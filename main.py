@@ -423,43 +423,51 @@ async def demote_old_top_engaged(chat_id: int):
 
 
 async def schedule_top_engaged_task():
-    """Schedules the TOP ENGAGED calculation to run weekly."""
-    # Wait for database to be initialized
-    while db_cursor is None:
-        logging.info("Waiting for database initialization...")
+    """تجدول مهمة حساب وإعلان الأكثر تفاعلاً لتشغيلها أسبوعياً."""
+    # انتظر حتى يتم تهيئة قاعدة البيانات
+    while db_cursor is None: # بافتراض أن db_cursor يتم تعيينه بعد init_db
+        logging.info("جارٍ انتظار تهيئة قاعدة البيانات...")
         await asyncio.sleep(1)
 
     while True:
         now = datetime.now(SAUDI_ARABIA_TIMEZONE)
 
-        # Calculate next Tuesday 00:00:00
-        # Tuesday is weekday 1 (Monday is 0, Sunday is 6)
-        days_until_tuesday = (1 - now.weekday() + 7) % 7 
+        # حساب الوقت المستهدف ليوم الثلاثاء *هذا* عند 00:00:00
+        # الثلاثاء هو اليوم رقم 1 في الأسبوع (الاثنين هو 0، الأحد هو 6)
+        # حساب الأيام حتى يوم الثلاثاء *هذا* (يمكن أن يكون 0 إذا كان اليوم هو الثلاثاء)
+        days_to_this_tuesday = (1 - now.weekday() + 7) % 7
+        this_tuesday_midnight = (now + timedelta(days=days_to_this_tuesday)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-        next_run_time = now + timedelta(days=days_until_tuesday)
-        next_run_time = next_run_time.replace(hour=0, minute=0, second=0, microsecond=0)
-
-        # If today is Tuesday and the time is already past 00:00, schedule for next Tuesday
-        if now.weekday() == 1 and now.hour >= 0 and now.minute >= 0 and now.second >= 0:
-            next_run_time += timedelta(days=7)
+        # تحديد وقت التشغيل الفعلي التالي
+        if now >= this_tuesday_midnight:
+            # إذا كان الوقت الحالي في أو بعد منتصف ليل الثلاثاء هذا، فجدول للثلاثاء القادم
+            next_run_time = this_tuesday_midnight + timedelta(weeks=1)
+        else:
+            # إذا كان الوقت الحالي قبل منتصف ليل الثلاثاء هذا، فجدول ليوم الثلاثاء هذا
+            next_run_time = this_tuesday_midnight
 
         time_to_wait = (next_run_time - now).total_seconds()
 
-        logging.info(f"Next TOP ENGAGED announcement scheduled for: {next_run_time.strftime('%Y-%m-%d %H:%M:%S')} ({time_to_wait} seconds from now)")
+        logging.info(f"إعلان الأكثر تفاعلاً التالي مجدول لـ: {next_run_time.strftime('%Y-%m-%d %H:%M:%S')} ({time_to_wait} ثانية من الآن)")
+
+        # إذا كان time_to_wait صغيراً جداً أو سالباً (مما يعني أننا تجاوزنا الوقت المجدول)،
+        # قم بالتشغيل فوراً ثم جدولة للأسبوع التالي.
+        if time_to_wait <= 0:
+            logging.info("لقد فات الوقت المجدول أو هو الآن. جارٍ تشغيل إعلان الأكثر تفاعلاً فوراً.")
+            await calculate_and_announce_top_engaged()
+            # بعد التشغيل، أعد الجدولة للأسبوع *التالي*
+            next_run_time = next_run_time + timedelta(weeks=1)
+            time_to_wait = (next_run_time - datetime.now(SAUDI_ARABIA_TIMEZONE)).total_seconds()
+            if time_to_wait <= 0: # احتياطي لحالات إعادة الجدولة السريعة جداً أو مشاكل الساعة
+                time_to_wait = 60 # انتظر دقيقة واحدة على الأقل لتجنب حلقة ضيقة
+
         await asyncio.sleep(time_to_wait)
 
-        # Ensure it runs exactly at the scheduled time, even if sleep was slightly off
-        current_time_before_run = datetime.now(SAUDI_ARABIA_TIMEZONE)
-        if current_time_before_run.weekday() == 1 and \
-           current_time_before_run.hour == 0 and \
-           current_time_before_run.minute == 0:
-            await calculate_and_announce_top_engaged()
-        else:
-            logging.warning("Scheduled task woke up slightly off time. Skipping current run to avoid drift.")
+        # بعد النوم، هذا يعني أننا وصلنا إلى الوقت المجدول.
+        # يجب علينا دائماً تشغيل المهمة هنا.
+        logging.info("استيقظت لتشغيل مهمة إعلان الأكثر تفاعلاً المجدولة.")
+        await calculate_and_announce_top_engaged()
 
-        # Sleep for a bit to avoid busy-waiting or immediate re-scheduling in a loop
-        # and allow the main loop to handle other events.
-        await asyncio.sleep(60) # Sleep for 1 minute before re-calculating next run time
 
 # --- Message Handlers ---
 
