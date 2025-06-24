@@ -388,6 +388,13 @@ async def demote_old_top_engaged(chat_id: int):
         await db_conn.commit()
     logging.info("TOP ENGAGED history saved.")
 
+        # Store the date of this announcement for scheduling purposes
+    await db_cursor.execute("INSERT OR REPLACE INTO bot_settings (setting_name, setting_value) VALUES (?, ?)",
+                            ('last_announced_week_start_date', top_history_data['week_start_date']))
+    if db_conn:
+        await db_conn.commit()
+    logging.info(f"Last announced week start date updated to {top_history_data['week_start_date']}.")
+
     # Reset message counts for next week
     await db_cursor.execute("UPDATE message_counts SET message_count = 0")
     if db_conn:
@@ -425,48 +432,73 @@ async def demote_old_top_engaged(chat_id: int):
 async def schedule_top_engaged_task():
     """تجدول مهمة حساب وإعلان الأكثر تفاعلاً لتشغيلها أسبوعياً."""
     # انتظر حتى يتم تهيئة قاعدة البيانات
-    while db_cursor is None: # بافتراض أن db_cursor يتم تعيينه بعد init_db
+    while db_cursor is None:
         logging.info("جارٍ انتظار تهيئة قاعدة البيانات...")
         await asyncio.sleep(1)
 
     while True:
         now = datetime.now(SAUDI_ARABIA_TIMEZONE)
 
-        # حساب الوقت المستهدف ليوم الثلاثاء *هذا* عند 00:00:00
+        # 1. جلب تاريخ آخر إعلان من قاعدة البيانات
+        await db_cursor.execute("SELECT setting_value FROM bot_settings WHERE setting_name = 'last_announced_week_start_date'")
+        result = await db_cursor.fetchone()
+        last_announced_date_str = result[0] if result else None
+        last_announced_date = None
+        if last_announced_date_str:
+            try:
+                # تحويل التاريخ المخزن إلى كائن datetime مع المنطقة الزمنية
+                last_announced_date = datetime.strptime(last_announced_date_str, '%Y-%m-%d').replace(tzinfo=SAUDI_ARABIA_TIMEZONE)
+            except ValueError:
+                logging.error(f"Invalid last_announced_week_start_date in DB: {last_announced_date_str}")
+                last_announced_date = None
+
+        # 2. حساب بداية الأسبوع الحالي (منتصف ليل الثلاثاء الماضي أو الحالي)
         # الثلاثاء هو اليوم رقم 1 في الأسبوع (الاثنين هو 0، الأحد هو 6)
-        # حساب الأيام حتى يوم الثلاثاء *هذا* (يمكن أن يكون 0 إذا كان اليوم هو الثلاثاء)
-        days_to_this_tuesday = (1 - now.weekday() + 7) % 7
-        this_tuesday_midnight = (now + timedelta(days=days_to_this_tuesday)).replace(hour=0, minute=0, second=0, microsecond=0)
+        days_since_last_tuesday = (now.weekday() - 1 + 7) % 7
+        current_week_start = (now - timedelta(days=days_since_last_tuesday)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # تحديد وقت التشغيل الفعلي التالي
-        if now >= this_tuesday_midnight:
-            # إذا كان الوقت الحالي في أو بعد منتصف ليل الثلاثاء هذا، فجدول للثلاثاء القادم
-            next_run_time = this_tuesday_midnight + timedelta(weeks=1)
-        else:
-            # إذا كان الوقت الحالي قبل منتصف ليل الثلاثاء هذا، فجدول ليوم الثلاثاء هذا
-            next_run_time = this_tuesday_midnight
+        # 3. حساب وقت التشغيل المجدول التالي (منتصف ليل الثلاثاء القادم)
+        # إذا كان اليوم هو الثلاثاء والوقت بعد منتصف الليل، فالتشغيل التالي هو الثلاثاء القادم.
+        # وإلا، فهو الثلاثاء الحالي.
+        next_tuesday = now + timedelta(days=(1 - now.weekday() + 7) % 7)
+        next_scheduled_run = next_tuesday.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        time_to_wait = (next_run_time - now).total_seconds()
+        # إذا كان 'now' قد تجاوز 'next_scheduled_run' (على سبيل المثال، الآن الثلاثاء 00:01، و next_scheduled_run هو الثلاثاء 00:00)،
+        # فهذا يعني أن التشغيل الفعلي التالي هو بعد أسبوع من ذلك.
+        if now > next_scheduled_run:
+            next_scheduled_run += timedelta(weeks=1)
 
-        logging.info(f"إعلان الأكثر تفاعلاً التالي مجدول لـ: {next_run_time.strftime('%Y-%m-%d %H:%M:%S')} ({time_to_wait} ثانية من الآن)")
-
-        # إذا كان time_to_wait صغيراً جداً أو سالباً (مما يعني أننا تجاوزنا الوقت المجدول)،
-        # قم بالتشغيل فوراً ثم جدولة للأسبوع التالي.
-        if time_to_wait <= 0:
-            logging.info("لقد فات الوقت المجدول أو هو الآن. جارٍ تشغيل إعلان الأكثر تفاعلاً فوراً.")
+        # 4. تحديد ما إذا كان يجب التشغيل فوراً
+        should_run_now = False
+        # إذا كان الوقت الحالي قد تجاوز بداية الأسبوع الحالي، ولم يتم الإعلان عن هذا الأسبوع بعد
+        if now >= current_week_start and \
+           (last_announced_date is None or last_announced_date < current_week_start):
+            logging.info(f"Current time ({now}) is past current week's start ({current_week_start}) and announcement not yet made for this week. Running immediately.")
+            should_run_now = True
+        
+        # 5. تنفيذ الإعلان إذا لزم الأمر
+        if should_run_now:
             await calculate_and_announce_top_engaged()
-            # بعد التشغيل، أعد الجدولة للأسبوع *التالي*
-            next_run_time = next_run_time + timedelta(weeks=1)
-            time_to_wait = (next_run_time - datetime.now(SAUDI_ARABIA_TIMEZONE)).total_seconds()
-            if time_to_wait <= 0: # احتياطي لحالات إعادة الجدولة السريعة جداً أو مشاكل الساعة
-                time_to_wait = 60 # انتظر دقيقة واحدة على الأقل لتجنب حلقة ضيقة
+            # بعد التشغيل الفوري، نحتاج إلى التأكد من أن النوم التالي سيكون حتى الثلاثاء القادم.
+            # next_scheduled_run يشير بالفعل إلى الثلاثاء القادم.
+            time_to_sleep = (next_scheduled_run - datetime.now(SAUDI_ARABIA_TIMEZONE)).total_seconds()
+            if time_to_sleep <= 0: # احتياطي إذا كان الحساب خاطئاً قليلاً أو تغير الوقت
+                time_to_sleep = 60 # انتظر دقيقة واحدة على الأقل لتجنب حلقة ضيقة
+        else:
+            # إذا لم يكن هناك حاجة للتشغيل الفوري، فنم حتى وقت التشغيل المجدول التالي.
+            time_to_sleep = (next_scheduled_run - now).total_seconds()
+            if time_to_sleep <= 0: # لا ينبغي أن يحدث هذا إذا كان المنطق صحيحاً، ولكن كإجراء وقائي
+                time_to_sleep = 60 # انتظر دقيقة واحدة على الأقل
 
-        await asyncio.sleep(time_to_wait)
+        logging.info(f"إعلان الأكثر تفاعلاً التالي مجدول لـ: {next_scheduled_run.strftime('%Y-%m-%d %H:%M:%S')} (النوم لمدة {time_to_sleep} ثانية)")
+        await asyncio.sleep(time_to_sleep)
 
-        # بعد النوم، هذا يعني أننا وصلنا إلى الوقت المجدول.
+        # 6. بعد الاستيقاظ من النوم، هذا يعني أننا وصلنا إلى وقت التشغيل المجدول.
         # يجب علينا دائماً تشغيل المهمة هنا.
         logging.info("استيقظت لتشغيل مهمة إعلان الأكثر تفاعلاً المجدولة.")
         await calculate_and_announce_top_engaged()
+
+
 
 
 # --- Message Handlers ---
