@@ -196,19 +196,19 @@ async def calculate_and_announce_top_engaged():
         except Exception as e:
             logging.error(f"Error promoting user {user_id}: {e}")
 
-        # Pin the new message
-     try:
-            await bot.pin_chat_message(chat_id=main_group_id, message_id=sent_message.message_id, disable_notification=True)
-            logging.info(f"TOP ENGAGED message {sent_message.message_id} pinned in chat {main_group_id}.")
+    # Pin the new message
+    # هذا الـ 'try' يجب أن يكون محاذياً للـ 'except's الخاصة به
+    try:
+        await bot.pin_chat_message(chat_id=main_group_id, message_id=sent_message.message_id, disable_notification=True)
+        logging.info(f"TOP ENGAGED message {sent_message.message_id} pinned in chat {main_group_id}.")
 
-        
-        except TelegramForbiddenError:
-            logging.warning(f"Bot lacks 'can_pin_messages' permission in chat {main_group_id}. Could not pin message.")
-            await bot.send_message(OWNER_ID, f"⚠️ لا يمكنني تثبيت رسالة TOP ENGAGED في المجموعة {main_group_id}. تأكد أن البوت لديه صلاحية 'تثبيت الرسائل'.")
-        except TelegramBadRequest as e:
-            logging.warning(f"Failed to pin message {sent_message.message_id} in chat {main_group_id}: {e}")
-        except Exception as e:
-            logging.error(f"Error pinning TOP ENGAGED message: {e}")
+    except TelegramForbiddenError: # هذه الـ 'except's يجب أن تكون محاذية للـ 'try' الخاص بها
+        logging.warning(f"Bot lacks 'can_pin_messages' permission in chat {main_group_id}. Could not pin message.")
+        await bot.send_message(OWNER_ID, f"⚠️ لا يمكنني تثبيت رسالة TOP ENGAGED في المجموعة {main_group_id}. تأكد أن البوت لديه صلاحية 'تثبيت الرسائل'.")
+    except TelegramBadRequest as e:
+        logging.warning(f"Failed to pin message {sent_message.message_id} in chat {main_group_id}: {e}")
+    except Exception as e:
+        logging.error(f"Error pinning TOP ENGAGED message: {e}")
 
     except TelegramForbiddenError as e:
         logging.error(f"Bot forbidden to send messages in chat {main_group_id}: {e}")
