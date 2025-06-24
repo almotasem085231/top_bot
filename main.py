@@ -149,66 +149,214 @@ async def set_group_chat_id(chat_id: int):
 # --- TOP ENGAGED Logic ---
 
 async def calculate_and_announce_top_engaged():
-    # ... (الكود السابق في الدالة، مثل جلب top_users) ...
+    """
+    Calculates top engaged users, announces them, resets counts,
+    and notifies the owner. Pins the new message instead of deleting old one.
+    """
+    logging.info("Starting TOP ENGAGED calculation and announcement.")
 
-    # مثال: حلقة تكرارية للمرور على المستخدمين الأوائل
-    # يجب أن تكون هذه الحلقة موجودة في الكود الخاص بك
-    # for i, (user_id, username, full_name, count) in enumerate(top_users):
-    # لاحظ أن الـ 'try' التالي محاذٍ لـ 'for' إذا كانت الحلقة موجودة
-        try: # هذا الـ 'try' يجب أن يكون محاذياً للـ 'for' loop إذا كانت موجودة
-            # Wait for the promotion to take effect
-            await asyncio.sleep(1.5)
+    main_group_id = await get_group_chat_id()
+    if not main_group_id:
+        logging.warning("Main group chat ID is not set. Cannot announce TOP ENGAGED.")
+        try:
+            await bot.send_message(OWNER_ID, "⚠️ لم يتم تحديد المجموعة الرئيسية للإعلان عن TOP ENGAGED. يرجى استخدام أمر /set_main_group **داخل المجموعة** التي تريد الإعلان فيها.")
+        except TelegramForbiddenError:
+            logging.error(f"Cannot send message to owner {OWNER_ID}. User blocked bot.")
+        return
 
-            # Set custom title based on position
-            titles = ["TOP ENGAGED 1", "TOP ENGAGED 2", "TOP ENGAGED 3"]
-          
-            await bot.set_chat_administrator_custom_title(
-                chat_id=main_group_id,
-                user_id=user_id,
-                custom_title=titles[i]
-            )
-            logging.info(f"Set custom title '{titles[i]}' for user {user_id}")
-            
-            # Now remove all permissions to make them admin with no actual permissions
-            await asyncio.sleep(0.5)  # Small delay before removing permissions
-            await bot.promote_chat_member(
-                chat_id=main_group_id,
-                user_id=user_id,
-                can_manage_chat=False,
-                can_delete_messages=False,
-                can_manage_video_chats=False,
-                can_restrict_members=False,
-                can_promote_members=False,
-                can_change_info=False,
-                can_invite_users=True,
-                can_pin_messages=False,
-                can_post_messages=False
-            )
-            logging.info(f"Removed all permissions for user {user_id} while keeping custom title")
+    # Check if db_cursor is initialized
+    if db_cursor is None:
+        logging.warning("Database cursor is not initialized. Cannot calculate top engaged users.")
+        return
 
-            display_name = username if username else full_name if full_name else f"User {user_id}"
-            logging.info(f"Promoted {display_name} (ID: {user_id}) to admin with custom title for TOP ENGAGED position {i+1}")
 
-        except TelegramForbiddenError: # هذه الـ 'except's يجب أن تكون محاذية للـ 'try' الخاص بها
-            logging.warning(f"Bot lacks permission to promote user {user_id} in chat {main_group_id}")
-        except TelegramBadRequest as e:
-            logging.warning(f"Failed to promote user {user_id}: {e}")
-        except Exception as e:
-            logging.error(f"Error promoting user {user_id}: {e}")
-
-    # Pin the new message
-    # هذا الـ 'try' يجب أن يكون محاذياً للـ 'except's الخاصة به
+async def demote_old_top_engaged(chat_id: int):
+    """
+    Demotes users who were previously set as 'TOP ENGAGED' admins,
+    removing their custom titles and administrative privileges.
+    """
+    logging.info(f"Demoting old TOP ENGAGED users in chat {chat_id}")
     try:
-        await bot.pin_chat_message(chat_id=main_group_id, message_id=sent_message.message_id, disable_notification=True)
-        logging.info(f"TOP ENGAGED message {sent_message.message_id} pinned in chat {main_group_id}.")
-
-    except TelegramForbiddenError: # هذه الـ 'except's يجب أن تكون محاذية للـ 'try' الخاص بها
-        logging.warning(f"Bot lacks 'can_pin_messages' permission in chat {main_group_id}. Could not pin message.")
-        await bot.send_message(OWNER_ID, f"⚠️ لا يمكنني تثبيت رسالة TOP ENGAGED في المجموعة {main_group_id}. تأكد أن البوت لديه صلاحية 'تثبيت الرسائل'.")
-    except TelegramBadRequest as e:
-        logging.warning(f"Failed to pin message {sent_message.message_id} in chat {main_group_id}: {e}")
+        # Get current chat administrators
+        admins = await bot.get_chat_administrators(chat_id)
+        
+        for admin in admins:
+            user_id = admin.user.id
+            custom_title = admin.custom_title
+            
+            # Check if the custom title indicates a 'TOP ENGAGED' winner
+            if custom_title and ("TOP ENGAGED" in custom_title.upper()):
+                logging.info(f"Found old TOP ENGAGED admin: {admin.user.full_name} (ID: {user_id}) with title: {custom_title}")
+                try:
+                    # Remove all administrative privileges, effectively demoting them to a regular member
+                    # This also removes the custom title.
+                    await bot.promote_chat_member(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        can_manage_chat=False,
+                        can_delete_messages=False,
+                        can_manage_video_chats=False,
+                        can_restrict_members=False,
+                        can_promote_members=False,
+                        can_change_info=False,
+                        can_invite_users=False,
+                        can_pin_messages=False,
+                        can_post_messages=False # Ensure all are False
+                    )
+                    logging.info(f"Successfully demoted {admin.user.full_name} (ID: {user_id}) and removed custom title.")
+                    await asyncio.sleep(0.1) # Small delay to avoid hitting API limits
+                except TelegramForbiddenError:
+                    logging.warning(f"Bot lacks permission to demote user {user_id} in chat {chat_id}")
+                except TelegramBadRequest as e:
+                    logging.warning(f"Failed to demote user {user_id}: {e}")
+                except Exception as e:
+                    logging.error(f"Error demoting user {user_id}: {e}")
+            
+    except TelegramForbiddenError:
+        logging.error(f"Bot lacks 'can_promote_members' permission in chat {chat_id}. Cannot demote old TOP ENGAGED users.")
     except Exception as e:
-        logging.error(f"Error pinning TOP ENGAGED message: {e}")
+        logging.error(f"Error getting chat administrators or demoting users in chat {chat_id}: {e}")
+
+    
+    # Get top 3 users by message count
+    await db_cursor.execute("SELECT user_id, username, full_name, message_count FROM message_counts ORDER BY message_count DESC LIMIT 3")
+    top_users_data = await db_cursor.fetchall()
+
+    owner_and_deputy_notification_text_details = "" # Details for notification
+    top_history_data = {
+        'week_start_date': datetime.now(SAUDI_ARABIA_TIMEZONE).strftime('%Y-%m-%d'),
+        'top_1_user_id': None, 'top_2_user_id': None, 'top_3_user_id': None,
+        'top_1_username': None, 'top_2_username': None, 'top_3_username': None,
+    }
+
+    announcement_text_template = (
+        "التوب الأسبوعي 🔝 \n\n"
+        "🥇المركز الاول  {top1_mention}\n\n"
+        "🥈المركز الثاني  {top2_mention}\n\n"
+        "🥉المركز الثالث  {top3_mention}\n\n"
+        "مبروك لكم لقب 🏅top engaged \n\n"
+        "وشكرا لتفاعل الجميع وحظ موفق للأسبوع القادم 🤍"
+    )
+
+
+    placeholders = {
+        'top1_mention': "غير متاح",
+        'top2_mention': "غير متاح",
+        'top3_mention': "غير متاح",
+    }
+
+    if not top_users_data:
+        announcement_text = "لا يوجد بيانات تفاعل كافية لهذا الأسبوع."
+        owner_and_deputy_notification_text_details = "لم يتم تسجيل أي تفاعل لهذا الأسبوع."
+    else:
+        for i, (user_id, username, full_name, count) in enumerate(top_users_data):
+            # Define how the user will be mentioned/displayed
+            if username:
+                display_mention = f"@{username}" # Direct @mention if username exists
+            else:
+                # Use a clickable full name if no username, otherwise just ID
+                display_name = full_name if full_name else f"مستخدم (ID: {user_id})"
+                display_mention = f"<a href='tg://user?id={user_id}'>{display_name}</a>"
+
+            owner_and_deputy_notification_text_details += f"\n- {display_mention} ({count} رسالة)"
+
+            # Populate history data and announcement placeholders
+            if i == 0:
+                top_history_data['top_1_user_id'] = user_id
+                top_history_data['top_1_username'] = username if username else full_name
+                placeholders['top1_mention'] = display_mention
+            elif i == 1:
+                top_history_data['top_2_user_id'] = user_id
+                top_history_data['top_2_username'] = username if username else full_name
+                placeholders['top2_mention'] = display_mention
+            elif i == 2:
+                top_history_data['top_3_user_id'] = user_id
+                top_history_data['top_3_username'] = username if username else full_name
+                placeholders['top3_mention'] = display_mention
+
+        announcement_text = announcement_text_template.format(**placeholders)
+
+    # Announce in the main group
+    try:
+        sent_message = await bot.send_message(
+            chat_id=main_group_id,
+            text=announcement_text,
+            parse_mode="HTML" # IMPORTANT: HTML parse mode is needed for clickable mentions
+        )
+        logging.info(f"TOP ENGAGED announced in chat {main_group_id}. Message ID: {sent_message.message_id}")
+
+        # Give custom titles to top 3 users
+        for i, (user_id, username, full_name, count) in enumerate(top_users_data):
+            try:
+                # Promote user to admin with minimal permission to ensure they become actual administrators
+                await bot.promote_chat_member(
+                    chat_id=main_group_id,
+                    user_id=user_id,
+                    can_manage_chat=False,
+                    can_delete_messages=False,
+                    can_manage_video_chats=False,
+                    can_restrict_members=False,
+                    can_promote_members=False,
+                    can_change_info=True,  # Give this minimal permission to make them admin
+                    can_invite_users=False,
+                    can_pin_messages=False,
+                    can_post_messages=False
+                )
+
+                # Wait for the promotion to take effect
+                await asyncio.sleep(1.5)
+
+                # Set custom title based on position
+                titles = ["TOP ENGAGED 1", "TOP ENGAGED 2", "TOP ENGAGED 3"]
+                try:
+                    await bot.set_chat_administrator_custom_title(
+                        chat_id=main_group_id,
+                        user_id=user_id,
+                        custom_title=titles[i]
+                    )
+                    logging.info(f"Set custom title '{titles[i]}' for user {user_id}")
+                    
+                    # Now remove all permissions to make them admin with no actual permissions
+                    await asyncio.sleep(0.5)  # Small delay before removing permissions
+                    await bot.promote_chat_member(
+                        chat_id=main_group_id,
+                        user_id=user_id,
+                        can_manage_chat=False,
+                        can_delete_messages=False,
+                        can_manage_video_chats=False,
+                        can_restrict_members=False,
+                        can_promote_members=False,
+                        can_change_info=False,
+                        can_invite_users=True,
+                        can_pin_messages=False,
+                        can_post_messages=False
+                    )
+                    logging.info(f"Removed all permissions for user {user_id} while keeping custom title")
+                    
+                except Exception as e:
+                    logging.warning(f"Failed to set custom title for user {user_id}: {e}")
+
+                display_name = username if username else full_name if full_name else f"User {user_id}"
+                logging.info(f"Promoted {display_name} (ID: {user_id}) to admin with custom title for TOP ENGAGED position {i+1}")
+
+            except TelegramForbiddenError:
+                logging.warning(f"Bot lacks permission to promote user {user_id} in chat {main_group_id}")
+            except TelegramBadRequest as e:
+                logging.warning(f"Failed to promote user {user_id}: {e}")
+            except Exception as e:
+                logging.error(f"Error promoting user {user_id}: {e}")
+
+        # Pin the new message
+        try:
+            await bot.pin_chat_message(chat_id=main_group_id, message_id=sent_message.message_id, disable_notification=True)
+            logging.info(f"TOP ENGAGED message {sent_message.message_id} pinned in chat {main_group_id}.")
+        except TelegramForbiddenError:
+            logging.warning(f"Bot lacks 'can_pin_messages' permission in chat {main_group_id}. Could not pin message.")
+            await bot.send_message(OWNER_ID, f"⚠️ لا يمكنني تثبيت رسالة TOP ENGAGED في المجموعة {main_group_id}. تأكد أن البوت لديه صلاحية 'تثبيت الرسائل'.")
+        except TelegramBadRequest as e:
+            logging.warning(f"Failed to pin message {sent_message.message_id} in chat {main_group_id}: {e}")
+        except Exception as e:
+            logging.error(f"Error pinning TOP ENGAGED message: {e}")
 
     except TelegramForbiddenError as e:
         logging.error(f"Bot forbidden to send messages in chat {main_group_id}: {e}")
@@ -275,67 +423,43 @@ async def calculate_and_announce_top_engaged():
 
 
 async def schedule_top_engaged_task():
-    logging.info("Scheduler started.")
+    """Schedules the TOP ENGAGED calculation to run weekly."""
+    # Wait for database to be initialized
+    while db_cursor is None:
+        logging.info("Waiting for database initialization...")
+        await asyncio.sleep(1)
+
     while True:
         now = datetime.now(SAUDI_ARABIA_TIMEZONE)
 
-        # 1. Get last announcement time from DB
-        last_announcement_time = None
-        try:
-            await db_cursor.execute("SELECT setting_value FROM bot_settings WHERE setting_name = \'last_top_engaged_announcement\'")
-            last_announcement_str = await db_cursor.fetchone()
-            if last_announcement_str:
-                try:
-                    last_announcement_time = datetime.fromisoformat(last_announcement_str[0]).astimezone(SAUDI_ARABIA_TIMEZONE)
-                except ValueError:
-                    logging.error("Invalid last_top_engaged_announcement format in DB.")
-        except Exception as e:
-            logging.error(f"Error fetching last_top_engaged_announcement from DB: {e}")
+        # Calculate next Tuesday 00:00:00
+        # Tuesday is weekday 1 (Monday is 0, Sunday is 6)
+        days_until_tuesday = (1 - now.weekday() + 7) % 7 
 
-        # Determine the start of the current week (most recent Tuesday 00:00)
-        current_week_tuesday_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        while current_week_tuesday_midnight.weekday() != 1: # 1 is Tuesday
-            current_week_tuesday_midnight -= timedelta(days=1)
+        next_run_time = now + timedelta(days=days_until_tuesday)
+        next_run_time = next_run_time.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # 2. Check if an announcement was missed (e.g., bot was offline) or if it\'s the first run
-        if last_announcement_time is None or last_announcement_time < current_week_tuesday_midnight:
-            logging.info("Missed a TOP ENGAGED announcement or first run. Running now to catch up.")
-            await calculate_and_announce_top_engaged()
-            # Update last announcement time after successful run
-            try:
-                await db_cursor.execute("INSERT OR REPLACE INTO bot_settings (setting_name, setting_value) VALUES (?, ?)",
-                                        ('last_top_engaged_announcement', datetime.now(SAUDI_ARABIA_TIMEZONE).isoformat()))
-                await db_conn.commit()
-            except Exception as e:
-                logging.error(f"Error updating last_top_engaged_announcement in DB: {e}")
+        # If today is Tuesday and the time is already past 00:00, schedule for next Tuesday
+        if now.weekday() == 1 and now.hour >= 0 and now.minute >= 0 and now.second >= 0:
+            next_run_time += timedelta(days=7)
 
-        # 3. Calculate next scheduled run (for the *next* Tuesday)
-        next_tuesday_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        # If it\'s already Tuesday and past midnight, schedule for next Tuesday
-        if next_tuesday_midnight.weekday() == 1 and now.hour >= 0 and now.minute >= 0 and now.second >= 0:
-             next_tuesday_midnight += timedelta(days=7)
-        else:
-            # Find the next Tuesday
-            while next_tuesday_midnight.weekday() != 1:
-                next_tuesday_midnight += timedelta(days=1)
+        time_to_wait = (next_run_time - now).total_seconds()
 
-        time_to_wait = (next_tuesday_midnight - now).total_seconds()
-
-        if time_to_wait < 0: # Safeguard, should not be needed with correct logic but good to have
-            time_to_wait += 7 * 24 * 60 * 60
-
-        logging.info(f"Next TOP ENGAGED announcement scheduled for: {next_tuesday_midnight} (waiting {time_to_wait:.2f} seconds)")
+        logging.info(f"Next TOP ENGAGED announcement scheduled for: {next_run_time.strftime('%Y-%m-%d %H:%M:%S')} ({time_to_wait} seconds from now)")
         await asyncio.sleep(time_to_wait)
 
-        logging.info("It\'s time for TOP ENGAGED announcement!")
-        await calculate_and_announce_top_engaged()
-        # Update last announcement time after successful run
-        try:
-            await db_cursor.execute("INSERT OR REPLACE INTO bot_settings (setting_name, setting_value) VALUES (?, ?)",
-                                    ('last_top_engaged_announcement', datetime.now(SAUDI_ARABIA_TIMEZONE).isoformat()))
-            await db_conn.commit()
-        except Exception as e:
-            logging.error(f"Error updating last_top_engaged_announcement in DB: {e}")
+        # Ensure it runs exactly at the scheduled time, even if sleep was slightly off
+        current_time_before_run = datetime.now(SAUDI_ARABIA_TIMEZONE)
+        if current_time_before_run.weekday() == 1 and \
+           current_time_before_run.hour == 0 and \
+           current_time_before_run.minute == 0:
+            await calculate_and_announce_top_engaged()
+        else:
+            logging.warning("Scheduled task woke up slightly off time. Skipping current run to avoid drift.")
+
+        # Sleep for a bit to avoid busy-waiting or immediate re-scheduling in a loop
+        # and allow the main loop to handle other events.
+        await asyncio.sleep(60) # Sleep for 1 minute before re-calculating next run time
 
 # --- Message Handlers ---
 
