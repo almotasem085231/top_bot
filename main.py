@@ -423,7 +423,6 @@ async def demote_old_top_engaged(chat_id: int):
 
 
 async def schedule_top_engaged_task():
-   async def scheduler():
     """Schedules the weekly TOP ENGAGED announcement."""
     logging.info("Scheduler started.")
     while True:
