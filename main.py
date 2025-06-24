@@ -149,48 +149,50 @@ async def set_group_chat_id(chat_id: int):
 # --- TOP ENGAGED Logic ---
 
 async def calculate_and_announce_top_engaged():
-                # Wait for the promotion to take effect
-                await asyncio.sleep(1.5)
+    # ... (الكود السابق في الدالة، مثل جلب top_users) ...
 
-                # Set custom title based on position
-                titles = ["TOP ENGAGED 1", "TOP ENGAGED 2", "TOP ENGAGED 3"]
-                try:
-                    await bot.set_chat_administrator_custom_title(
-                        chat_id=main_group_id,
-                        user_id=user_id,
-                        custom_title=titles[i]
-                    )
-                    logging.info(f"Set custom title '{titles[i]}' for user {user_id}")
-                    
-                    # Now remove all permissions to make them admin with no actual permissions
-                    await asyncio.sleep(0.5)  # Small delay before removing permissions
-                    await bot.promote_chat_member(
-                        chat_id=main_group_id,
-                        user_id=user_id,
-                        can_manage_chat=False,
-                        can_delete_messages=False,
-                        can_manage_video_chats=False,
-                        can_restrict_members=False,
-                        can_promote_members=False,
-                        can_change_info=False,
-                        can_invite_users=True,
-                        can_pin_messages=False,
-                        can_post_messages=False
-                    )
-                    logging.info(f"Removed all permissions for user {user_id} while keeping custom title")
-                    
-                except Exception as e:
-                    logging.warning(f"Failed to set custom title for user {user_id}: {e}")
+    # مثال: حلقة تكرارية للمرور على المستخدمين الأوائل
+    # for i, (user_id, username, full_name, count) in enumerate(top_users):
+        try: # يجب أن تكون كتلة 'try' هنا
+            # Wait for the promotion to take effect
+            await asyncio.sleep(1.5)
 
-                display_name = username if username else full_name if full_name else f"User {user_id}"
-                logging.info(f"Promoted {display_name} (ID: {user_id}) to admin with custom title for TOP ENGAGED position {i+1}")
+            # Set custom title based on position
+            titles = ["TOP ENGAGED 1", "TOP ENGAGED 2", "TOP ENGAGED 3"]
+          
+            await bot.set_chat_administrator_custom_title(
+                chat_id=main_group_id,
+                user_id=user_id,
+                custom_title=titles[i]
+            )
+            logging.info(f"Set custom title '{titles[i]}' for user {user_id}")
+            
+            # Now remove all permissions to make them admin with no actual permissions
+            await asyncio.sleep(0.5)  # Small delay before removing permissions
+            await bot.promote_chat_member(
+                chat_id=main_group_id,
+                user_id=user_id,
+                can_manage_chat=False,
+                can_delete_messages=False,
+                can_manage_video_chats=False,
+                can_restrict_members=False,
+                can_promote_members=False,
+                can_change_info=False,
+                can_invite_users=True,
+                can_pin_messages=False,
+                can_post_messages=False
+            )
+            logging.info(f"Removed all permissions for user {user_id} while keeping custom title")
 
-            except TelegramForbiddenError:
-                logging.warning(f"Bot lacks permission to promote user {user_id} in chat {main_group_id}")
-            except TelegramBadRequest as e:
-                logging.warning(f"Failed to promote user {user_id}: {e}")
-            except Exception as e:
-                logging.error(f"Error promoting user {user_id}: {e}")
+            display_name = username if username else full_name if full_name else f"User {user_id}"
+            logging.info(f"Promoted {display_name} (ID: {user_id}) to admin with custom title for TOP ENGAGED position {i+1}")
+
+        except TelegramForbiddenError:
+            logging.warning(f"Bot lacks permission to promote user {user_id} in chat {main_group_id}")
+        except TelegramBadRequest as e:
+            logging.warning(f"Failed to promote user {user_id}: {e}")
+        except Exception as e:
+            logging.error(f"Error promoting user {user_id}: {e}")
 
         # Pin the new message
         try:
