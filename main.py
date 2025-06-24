@@ -152,8 +152,10 @@ async def calculate_and_announce_top_engaged():
     # ... (الكود السابق في الدالة، مثل جلب top_users) ...
 
     # مثال: حلقة تكرارية للمرور على المستخدمين الأوائل
+    # يجب أن تكون هذه الحلقة موجودة في الكود الخاص بك
     # for i, (user_id, username, full_name, count) in enumerate(top_users):
-        try: # يجب أن تكون كتلة 'try' هنا
+    # لاحظ أن الـ 'try' التالي محاذٍ لـ 'for' إذا كانت الحلقة موجودة
+        try: # هذا الـ 'try' يجب أن يكون محاذياً للـ 'for' loop إذا كانت موجودة
             # Wait for the promotion to take effect
             await asyncio.sleep(1.5)
 
@@ -187,7 +189,7 @@ async def calculate_and_announce_top_engaged():
             display_name = username if username else full_name if full_name else f"User {user_id}"
             logging.info(f"Promoted {display_name} (ID: {user_id}) to admin with custom title for TOP ENGAGED position {i+1}")
 
-        except TelegramForbiddenError:
+        except TelegramForbiddenError: # هذه الـ 'except's يجب أن تكون محاذية للـ 'try' الخاص بها
             logging.warning(f"Bot lacks permission to promote user {user_id} in chat {main_group_id}")
         except TelegramBadRequest as e:
             logging.warning(f"Failed to promote user {user_id}: {e}")
@@ -195,9 +197,11 @@ async def calculate_and_announce_top_engaged():
             logging.error(f"Error promoting user {user_id}: {e}")
 
         # Pin the new message
-        try:
+     try:
             await bot.pin_chat_message(chat_id=main_group_id, message_id=sent_message.message_id, disable_notification=True)
             logging.info(f"TOP ENGAGED message {sent_message.message_id} pinned in chat {main_group_id}.")
+
+        
         except TelegramForbiddenError:
             logging.warning(f"Bot lacks 'can_pin_messages' permission in chat {main_group_id}. Could not pin message.")
             await bot.send_message(OWNER_ID, f"⚠️ لا يمكنني تثبيت رسالة TOP ENGAGED في المجموعة {main_group_id}. تأكد أن البوت لديه صلاحية 'تثبيت الرسائل'.")
