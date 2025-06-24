@@ -423,44 +423,31 @@ async def demote_old_top_engaged(chat_id: int):
 
 
 async def schedule_top_engaged_task():
-    """Schedules the TOP ENGAGED calculation to run weekly."""
-    # Wait for database to be initialized
-    while db_cursor is None:
-        logging.info("Waiting for database initialization...")
-        await asyncio.sleep(1)
-
+   async def scheduler():
+    """Schedules the weekly TOP ENGAGED announcement."""
+    logging.info("Scheduler started.")
     while True:
         now = datetime.now(SAUDI_ARABIA_TIMEZONE)
+        # Calculate next Tuesday at 00:00 (midnight)
+        # Tuesday is 1 (Monday is 0, Sunday is 6)
+        days_until_tuesday = (1 - now.weekday() + 7) % 7
+        if days_until_tuesday == 0 and (now.hour > 0 or (now.hour == 0 and now.minute > 0)): # If it\"s Tuesday and past midnight, schedule for next Tuesday
+            days_until_tuesday = 7
 
-        # Calculate next Tuesday 00:00:00
-        # Tuesday is weekday 1 (Monday is 0, Sunday is 6)
-        days_until_tuesday = (1 - now.weekday() + 7) % 7 
+        next_tuesday_midnight = now + timedelta(days=days_until_tuesday)
+        next_tuesday_midnight = next_tuesday_midnight.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        next_run_time = now + timedelta(days=days_until_tuesday)
-        next_run_time = next_run_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        time_to_wait = (next_tuesday_midnight - now).total_seconds()
 
-        # If today is Tuesday and the time is already past 00:00, schedule for next Tuesday
-        if now.weekday() == 1 and now.hour >= 0 and now.minute >= 0 and now.second >= 0:
-            next_run_time += timedelta(days=7)
+        if time_to_wait < 0: # Should not happen with the logic above, but as a safeguard
+            time_to_wait += 7 * 24 * 60 * 60 # Add a week if somehow in the past
 
-        time_to_wait = (next_run_time - now).total_seconds()
-
-        logging.info(f"Next TOP ENGAGED announcement scheduled for: {next_run_time.strftime('%Y-%m-%d %H:%M:%S')} ({time_to_wait} seconds from now)")
+        logging.info(f"Next TOP ENGAGED announcement scheduled for: {next_tuesday_midnight} (waiting {time_to_wait:.2f} seconds)")
         await asyncio.sleep(time_to_wait)
 
-        # Ensure it runs exactly at the scheduled time, even if sleep was slightly off
-        current_time_before_run = datetime.now(SAUDI_ARABIA_TIMEZONE)
-        if current_time_before_run.weekday() == 1 and \
-           current_time_before_run.hour == 0 and \
-           current_time_before_run.minute == 0:
-            await calculate_and_announce_top_engaged()
-        else:
-            logging.warning("Scheduled task woke up slightly off time. Skipping current run to avoid drift.")
-
-        # Sleep for a bit to avoid busy-waiting or immediate re-scheduling in a loop
-        # and allow the main loop to handle other events.
-        await asyncio.sleep(60) # Sleep for 1 minute before re-calculating next run time
-
+        logging.info("It\"s time for TOP ENGAGED announcement!")
+        await calculate_and_announce_top_engaged()
+        await reset_message_counts() # Reset counts after announcement
 # --- Message Handlers ---
 
 @router.message(Command("start"))
