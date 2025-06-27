@@ -562,6 +562,11 @@ async def my_messages_handler(message: types.Message):
 @router.message(Command("top_this_week"))
 async def top_this_week_handler(message: types.Message):
     """Displays the current week's top engaged users."""
+    
+    if message.from_user is None or not (is_owner(message.from_user.id) or await is_deputy(message.from_user.id)):
+        await message.reply("ليس لديك صلاحية لعرض أعلى المستخدمين تفاعلاً. هذا الأمر متاح فقط للمالك والنواب.")
+        return
+        
     if db_cursor is None:
         await message.reply("عذراً، قاعدة البيانات غير متاحة حالياً.")
         return
