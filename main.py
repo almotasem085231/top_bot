@@ -503,6 +503,28 @@ async def schedule_top_engaged_task():
 
 # --- Message Handlers ---
 
+@router.message(Command("delete"))
+async def delete_message_command(message: types.Message):
+    """Allows the owner or deputies to delete a replied-to message."""
+    if not is_owner(message.from_user.id) and not await is_deputy(message.from_user.id):
+        await message.reply("ليس لديك الصلاحية لاستخدام هذا الأمر.")
+        return
+
+    if not message.reply_to_message:
+        await message.reply("الرجاء الرد على الرسالة التي تريد حذفها.")
+        return
+
+    try:
+        await bot.delete_message(chat_id=message.chat.id, message_id=message.reply_to_message.message_id)
+        await message.delete() # Delete the command message itself
+    except TelegramBadRequest as e:
+        logging.error(f"Failed to delete message: {e}")
+        await message.reply("لا يمكنني حذف هذه الرسالة. قد لا أمتلك الصلاحيات الكافية أو أن الرسالة قديمة جداً.")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while deleting message: {e}")
+        await message.reply("حدث خطأ غير متوقع أثناء محاولة حذف الرسالة.")
+
+
 @router.message(Command("start"))
 async def start_handler(message: types.Message):
     """Handles the /start command."""
